@@ -1,0 +1,6 @@
+[project]
+name = "paperbase-workstation"
+version = "1.0.0"
+description = "A local desktop workstation for organizing research papers"
+requires-python = ">=3.10"
+dependencies = []

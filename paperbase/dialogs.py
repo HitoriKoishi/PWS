@@ -1,0 +1,94 @@
+from __future__ import annotations
+
+import tkinter as tk
+from datetime import date
+from tkinter import messagebox, ttk
+
+from .config import COLORS, FONT, STATUS_TEXT
+from .models import Paper
+from .storage import PaperRepository
+
+
+class PaperEditor(tk.Toplevel):
+    def __init__(self, parent, paper: Paper | None, next_id: int):
+        super().__init__(parent)
+        self.result: Paper | None = None
+        self.paper = paper
+        self.next_id = next_id
+        self.title("编辑论文" if paper else "新建论文")
+        self.geometry("690x760")
+        self.minsize(620, 650)
+        self.configure(bg=COLORS["paper"])
+        self.transient(parent)
+        self.grab_set()
+        self._build()
+
+    def _build(self):
+        outer = tk.Frame(self, bg=COLORS["paper"], padx=30, pady=25)
+        outer.pack(fill="both", expand=True)
+        tk.Label(outer, text="编辑论文" if self.paper else "新建论文", bg=COLORS["paper"], fg=COLORS["ink"], font=(FONT, 20, "bold")).pack(anchor="w")
+        tk.Label(outer, text="把一篇论文整理成可复用的研究资产", bg=COLORS["paper"], fg=COLORS["muted"], font=(FONT, 9)).pack(anchor="w", pady=(5, 18))
+        form = tk.Frame(outer, bg=COLORS["paper"])
+        form.pack(fill="both", expand=True)
+        self.fields: dict[str, tk.Entry | ttk.Combobox | tk.Text] = {}
+        self._entry(form, "title", "论文名称 *", self.paper.title if self.paper else "")
+        self._entry(form, "venue", "会议 / 期刊 *", self.paper.venue if self.paper else "")
+        meta = tk.Frame(form, bg=COLORS["paper"])
+        meta.pack(fill="x")
+        year_box = tk.Frame(meta, bg=COLORS["paper"])
+        year_box.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self._entry(year_box, "year", "年份", str(self.paper.year if self.paper else date.today().year))
+        status_box = tk.Frame(meta, bg=COLORS["paper"])
+        status_box.pack(side="left", fill="x", expand=True, padx=(8, 0))
+        tk.Label(status_box, text="阅读状态", bg=COLORS["paper"], fg="#53655c", font=(FONT, 9, "bold")).pack(anchor="w", pady=(10, 5))
+        status = ttk.Combobox(status_box, values=list(STATUS_TEXT.values()), state="readonly", style="Form.TCombobox")
+        status.set(STATUS_TEXT.get(self.paper.status, "正在阅读") if self.paper else "正在阅读")
+        status.pack(fill="x")
+        self.fields["status"] = status
+        self._entry(form, "tags", "标签（用逗号分隔）", ", ".join(self.paper.tags) if self.paper else "")
+        self._text(form, "summary", "概要", self.paper.summary if self.paper else "", 4)
+        self._text(form, "innovations", "创新点（每行一个）", "\n".join(self.paper.innovations) if self.paper else "", 4)
+        self._text(form, "notes", "我的笔记", self.paper.notes if self.paper else "", 4)
+        footer = tk.Frame(outer, bg=COLORS["paper"])
+        footer.pack(fill="x", pady=(20, 0))
+        tk.Button(footer, text="取消", command=self.destroy, relief="solid", bd=1, bg=COLORS["white"], fg=COLORS["muted"], padx=18, pady=8, font=(FONT, 9)).pack(side="right")
+        tk.Button(footer, text="保存论文  ↗", command=self._save, relief="flat", bd=0, bg=COLORS["green"], fg="white", activebackground=COLORS["green_hover"], padx=18, pady=9, font=(FONT, 9, "bold")).pack(side="right", padx=(0, 9))
+
+    def _entry(self, parent, key, label, value):
+        tk.Label(parent, text=label, bg=COLORS["paper"], fg="#53655c", font=(FONT, 9, "bold")).pack(anchor="w", pady=(10, 5))
+        entry = ttk.Entry(parent, style="Form.TEntry")
+        entry.insert(0, value)
+        entry.pack(fill="x")
+        self.fields[key] = entry
+
+    def _text(self, parent, key, label, value, height):
+        tk.Label(parent, text=label, bg=COLORS["paper"], fg="#53655c", font=(FONT, 9, "bold")).pack(anchor="w", pady=(11, 5))
+        text = tk.Text(parent, height=height, wrap="word", relief="solid", bd=1, highlightthickness=0, bg=COLORS["white"], fg=COLORS["ink"], font=(FONT, 10), padx=9, pady=7)
+        text.insert("1.0", value)
+        text.pack(fill="x")
+        self.fields[key] = text
+
+    def _save(self):
+        title = self.fields["title"].get().strip()
+        venue = self.fields["venue"].get().strip()
+        if not title or not venue:
+            messagebox.showwarning("信息不完整", "请填写论文名称和会议 / 期刊。", parent=self)
+            return
+        try:
+            year = int(self.fields["year"].get() or date.today().year)
+        except ValueError:
+            messagebox.showwarning("年份格式错误", "年份必须是数字。", parent=self)
+            return
+        status = next(key for key, value in STATUS_TEXT.items() if value == self.fields["status"].get())
+        tags = [item.strip() for item in self.fields["tags"].get().replace("，", ",").split(",") if item.strip()]
+        summary = self.fields["summary"].get("1.0", "end").strip()
+        innovations = [item.strip() for item in self.fields["innovations"].get("1.0", "end").splitlines() if item.strip()]
+        notes = self.fields["notes"].get("1.0", "end").strip()
+        self.result = Paper(self.paper.id if self.paper else self.next_id, title, venue, year, status, tags, summary, innovations, notes, "刚刚更新", date.today().isoformat())
+        self.destroy()
+
+
+def edit_paper(parent, paper: Paper | None, papers: list[Paper]) -> Paper | None:
+    dialog = PaperEditor(parent, paper, PaperRepository.next_id(papers))
+    parent.wait_window(dialog)
+    return dialog.result
