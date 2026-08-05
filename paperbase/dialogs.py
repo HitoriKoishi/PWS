@@ -4,7 +4,7 @@ import tkinter as tk
 from datetime import date
 from tkinter import messagebox, ttk
 
-from .config import COLORS, FONT, STATUS_TEXT
+from .config import COLORS, FIELD_STYLES, FONT, STATUS_TEXT
 from .models import Paper
 from .storage import PaperRepository
 
@@ -28,8 +28,19 @@ class PaperEditor(tk.Toplevel):
         outer.pack(fill="both", expand=True)
         tk.Label(outer, text="编辑论文" if self.paper else "新建论文", bg=COLORS["paper"], fg=COLORS["ink"], font=(FONT, 20, "bold")).pack(anchor="w")
         tk.Label(outer, text="把一篇论文整理成可复用的研究资产", bg=COLORS["paper"], fg=COLORS["muted"], font=(FONT, 9)).pack(anchor="w", pady=(5, 18))
-        form = tk.Frame(outer, bg=COLORS["paper"])
-        form.pack(fill="both", expand=True)
+        content = tk.Frame(outer, bg=COLORS["paper"])
+        content.pack(fill="both", expand=True)
+        canvas = tk.Canvas(content, bg=COLORS["paper"], highlightthickness=0, bd=0)
+        scrollbar = ttk.Scrollbar(content, orient="vertical", command=canvas.yview, style="Modern.Vertical.TScrollbar")
+        form = tk.Frame(canvas, bg=COLORS["paper"])
+        window_id = canvas.create_window((0, 0), window=form, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        form.bind("<Configure>", lambda _event: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda event: canvas.itemconfigure(window_id, width=event.width))
+        self._bind_form_scroll(canvas, canvas)
+        self._bind_form_scroll(form, canvas)
         self.fields: dict[str, tk.Entry | ttk.Combobox | tk.Text] = {}
         self._entry(form, "title", "论文名称 *", self.paper.title if self.paper else "")
         self._entry(form, "venue", "会议 / 期刊 *", self.paper.venue if self.paper else "")
@@ -46,13 +57,29 @@ class PaperEditor(tk.Toplevel):
         status.pack(fill="x")
         self.fields["status"] = status
         self._entry(form, "tags", "标签（用逗号分隔）", ", ".join(self.paper.tags) if self.paper else "")
-        self._text(form, "summary", "概要", self.paper.summary if self.paper else "", 4)
-        self._text(form, "innovations", "创新点（每行一个）", "\n".join(self.paper.innovations) if self.paper else "", 4)
-        self._text(form, "notes", "我的笔记", self.paper.notes if self.paper else "", 4)
+        self._text(form, "summary", "≡  概要", self.paper.summary if self.paper else "", 4)
+        self._text(form, "innovations", "✳  创新点（每行一个）", "\n".join(self.paper.innovations) if self.paper else "", 4)
+        self._text(form, "notes", "▤  我的笔记", self.paper.notes if self.paper else "", 4)
         footer = tk.Frame(outer, bg=COLORS["paper"])
         footer.pack(fill="x", pady=(20, 0))
         tk.Button(footer, text="取消", command=self.destroy, relief="solid", bd=1, bg=COLORS["white"], fg=COLORS["muted"], padx=18, pady=8, font=(FONT, 9)).pack(side="right")
         tk.Button(footer, text="保存论文  ↗", command=self._save, relief="flat", bd=0, bg=COLORS["green"], fg="white", activebackground=COLORS["green_hover"], padx=18, pady=9, font=(FONT, 9, "bold")).pack(side="right", padx=(0, 9))
+
+    def _bind_form_scroll(self, widget, canvas):
+        def scroll(event):
+            if event.num == 4:
+                amount = -3
+            elif event.num == 5:
+                amount = 3
+            else:
+                amount = -1 * int(event.delta / 120)
+            canvas.yview_scroll(amount, "units")
+
+        widget.bind("<MouseWheel>", scroll, add="+")
+        widget.bind("<Button-4>", scroll, add="+")
+        widget.bind("<Button-5>", scroll, add="+")
+        for child in widget.winfo_children():
+            self._bind_form_scroll(child, canvas)
 
     def _entry(self, parent, key, label, value):
         tk.Label(parent, text=label, bg=COLORS["paper"], fg="#53655c", font=(FONT, 9, "bold")).pack(anchor="w", pady=(10, 5))
@@ -62,10 +89,13 @@ class PaperEditor(tk.Toplevel):
         self.fields[key] = entry
 
     def _text(self, parent, key, label, value, height):
-        tk.Label(parent, text=label, bg=COLORS["paper"], fg="#53655c", font=(FONT, 9, "bold")).pack(anchor="w", pady=(11, 5))
-        text = tk.Text(parent, height=height, wrap="word", relief="solid", bd=1, highlightthickness=0, bg=COLORS["white"], fg=COLORS["ink"], font=(FONT, 10), padx=9, pady=7)
+        style = FIELD_STYLES[key]
+        section = tk.Frame(parent, bg=style["bg"], highlightbackground=style["border"], highlightthickness=1, padx=12, pady=10)
+        section.pack(fill="x", pady=(12, 0))
+        tk.Label(section, text=label, bg=style["bg"], fg=style["heading"], font=(FONT, 9, "bold"), anchor="w").pack(fill="x", pady=(0, 7))
+        text = tk.Text(section, height=height, wrap="word", relief="flat", bd=0, highlightthickness=0, bg=style["bg"], fg=style["text"], insertbackground=style["heading"], font=(FONT, 10), padx=0, pady=2)
         text.insert("1.0", value)
-        text.pack(fill="x")
+        text.pack(fill="x", expand=True)
         self.fields[key] = text
 
     def _save(self):

@@ -3,7 +3,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from .config import COLORS, DATA_FILE, FONT, MONO, STATUS_COLOR, STATUS_ICON, STATUS_TEXT
+from .config import COLORS, DATA_FILE, FIELD_STYLES, FONT, MONO, STATUS_COLOR, STATUS_ICON, STATUS_TEXT
 from .dialogs import edit_paper
 from .models import Paper
 from .storage import PaperRepository
@@ -26,6 +26,7 @@ class PaperbaseApp:
         self.tag_filter: str | None = None
         self.sort_newest = True
         self.filtered: list[Paper] = []
+        self.card_widgets = {}
         self.status_buttons: dict[str, tk.Button] = {}
         self.tag_buttons: dict[str, tk.Button] = {}
         self._build()
@@ -85,7 +86,6 @@ class PaperbaseApp:
         self.view_title.pack(side="left")
         actions = tk.Frame(bar, bg=COLORS["paper"])
         actions.pack(side="right", padx=27)
-        tk.Label(actions, text="⌘ K", bg=COLORS["paper"], fg=COLORS["subtle"], font=(MONO, 8)).pack(side="left", padx=(0, 18))
         flat_button(actions, "＋  新建论文", self.new_paper, bg=COLORS["green"], fg="white", active_bg=COLORS["green_hover"], padx=15, pady=9, font=(FONT, 10, "bold")).pack(side="left")
 
     def _build_workspace(self, parent):
@@ -132,7 +132,7 @@ class PaperbaseApp:
         title_area.pack(side="left", fill="x", expand=True)
         self.status_pill = tk.Label(title_area, text="", bg=COLORS["green_light"], fg=COLORS["green_text"], font=(FONT, 9, "bold"), padx=9, pady=5)
         self.status_pill.pack(anchor="w")
-        self.detail_title = tk.Label(title_area, text="", bg=COLORS["paper"], fg=COLORS["ink"], font=(FONT, 20, "bold"), justify="left", anchor="w", wraplength=720)
+        self.detail_title = tk.Label(title_area, text="", bg=COLORS["paper"], fg=COLORS["ink"], font=(FONT, 20, "bold"), justify="left", anchor="w", wraplength=460)
         self.detail_title.pack(fill="x", pady=(14, 6))
         self.detail_venue = tk.Label(title_area, text="", bg=COLORS["paper"], fg=COLORS["muted"], font=(FONT, 10), anchor="w")
         self.detail_venue.pack(anchor="w")
@@ -140,38 +140,44 @@ class PaperbaseApp:
         action_area.pack(side="right", anchor="n", padx=(15, 0), pady=1)
         flat_button(action_area, "编辑", self.edit_paper, bg=COLORS["white"], fg=COLORS["green_text"], padx=12, pady=6).pack(side="left")
         flat_button(action_area, "删除", self.delete_paper, bg=COLORS["white"], fg=COLORS["danger"], padx=10, pady=6).pack(side="left", padx=(7, 0))
+        header.bind("<Configure>", lambda event: self._resize_detail_title(event, title_area))
         self.tag_line = tk.Label(panel, text="", bg=COLORS["paper"], fg=COLORS["muted"], font=(FONT, 9), anchor="w")
-        self.tag_line.pack(fill="x", pady=(19, 19))
-        insight = tk.Frame(panel, bg="#f2f7ef", highlightbackground="#dfe9df", highlightthickness=1)
+        self.tag_line.pack(fill="x", pady=(19, 16))
+        self.detail_scroll = ScrollableFrame(panel, bg=COLORS["paper"])
+        self.detail_scroll.pack(fill="both", expand=True)
+        content = self.detail_scroll.body
+        insight = tk.Frame(content, bg="#f2f7ef", highlightbackground="#dfe9df", highlightthickness=1)
         insight.pack(fill="x", pady=(0, 28))
         self.progress_text = tk.Label(insight, text="", bg="#f2f7ef", fg="#456b59", font=(FONT, 9), anchor="w", padx=12, pady=12)
         self.progress_text.pack(side="left")
         self.progress_bar = ttk.Progressbar(insight, style="Modern.Horizontal.TProgressbar", mode="determinate", length=180)
         self.progress_bar.pack(side="right", padx=14)
-        self.summary_text = self._section(panel, "≡", "概要")
-        self.innovation_text = self._section(panel, "✳", "创新点")
-        notes = tk.Frame(panel, bg=COLORS["yellow_light"], padx=15, pady=13)
+        self.summary_text = self._section(content, "summary", "≡  概要")
+        self.innovation_text = self._section(content, "innovations", "✳  创新点")
+        notes = tk.Frame(content, bg=FIELD_STYLES["notes"]["bg"], highlightbackground=FIELD_STYLES["notes"]["border"], highlightthickness=1, padx=15, pady=13)
         notes.pack(fill="x", pady=(0, 18))
-        tk.Label(notes, text="▤  我的笔记", bg=COLORS["yellow_light"], fg="#8d7443", font=(FONT, 10, "bold"), anchor="w").pack(fill="x", pady=(0, 8))
-        self.notes_text = self._readonly_text(notes, height=4, bg=COLORS["yellow_light"])
+        tk.Label(notes, text="▤  我的笔记", bg=FIELD_STYLES["notes"]["bg"], fg=FIELD_STYLES["notes"]["heading"], font=(FONT, 10, "bold"), anchor="w").pack(fill="x", pady=(0, 8))
+        self.notes_text = self._readonly_text(notes, height=4, bg=FIELD_STYLES["notes"]["bg"], fg=FIELD_STYLES["notes"]["text"])
         self.notes_text.pack(fill="x")
-        footer = tk.Frame(panel, bg=COLORS["paper"])
+        footer = tk.Frame(content, bg=COLORS["paper"])
         footer.pack(fill="x")
         self.date_label = tk.Label(footer, text="", bg=COLORS["paper"], fg=COLORS["subtle"], font=(MONO, 8), anchor="w")
         self.date_label.pack(side="left")
         flat_button(footer, "复制这篇论文  ↗", self.duplicate_paper, bg=COLORS["paper"], fg=COLORS["green_text"], padx=5, pady=2).pack(side="right")
+        self.detail_scroll.bind_scroll_tree(content)
         return panel
 
-    def _section(self, parent, symbol, title):
-        section = tk.Frame(parent, bg=COLORS["paper"])
+    def _section(self, parent, key, title):
+        style = FIELD_STYLES[key]
+        section = tk.Frame(parent, bg=style["bg"], highlightbackground=style["border"], highlightthickness=1, padx=15, pady=13)
         section.pack(fill="x", pady=(0, 23))
-        tk.Label(section, text=f"{symbol}  {title}", bg=COLORS["paper"], fg=COLORS["ink"], font=(FONT, 10, "bold"), anchor="w").pack(fill="x", pady=(0, 8))
-        text = self._readonly_text(section, height=4)
+        tk.Label(section, text=title, bg=style["bg"], fg=style["heading"], font=(FONT, 10, "bold"), anchor="w").pack(fill="x", pady=(0, 8))
+        text = self._readonly_text(section, height=4, bg=style["bg"], fg=style["text"])
         text.pack(fill="x")
         return text
 
-    def _readonly_text(self, parent, height, bg=None):
-        return tk.Text(parent, height=height, wrap="word", relief="flat", bd=0, highlightthickness=0, bg=bg or COLORS["paper"], fg="#65776e", font=(FONT, 10), padx=0, pady=0, spacing1=3, state="disabled")
+    def _readonly_text(self, parent, height, bg=None, fg="#65776e"):
+        return tk.Text(parent, height=height, wrap="word", relief="flat", bd=0, highlightthickness=0, bg=bg or COLORS["paper"], fg=fg, font=(FONT, 10), padx=0, pady=0, spacing1=3, state="disabled")
 
     def set_status_filter(self, value):
         self.status_filter, self.tag_filter = value, None
@@ -201,9 +207,13 @@ class PaperbaseApp:
         self.render_detail()
         self.update_sidebar()
 
-    def render_list(self):
+    def render_list(self, preserve_scroll=False):
         self.filtered = self.filtered_papers()
+        visible_ids = {paper.id for paper in self.filtered}
+        if self.selected_id not in visible_ids:
+            self.selected_id = self.filtered[0].id if self.filtered else None
         self.card_list.clear()
+        self.card_widgets = {}
         if not self.filtered:
             self.empty_label.place(relx=0.5, rely=0.45, anchor="center")
         else:
@@ -211,6 +221,12 @@ class PaperbaseApp:
             for paper in self.filtered:
                 card = PaperCard(self.card_list.body, paper, paper.id == self.selected_id, self.select_paper)
                 card.pack(fill="x", pady=(0, 9))
+                self.card_widgets[paper.id] = card
+                self.card_list.bind_scroll_tree(card)
+
+    def _resize_detail_title(self, event, title_area):
+        available = max(260, event.width - 150)
+        self.detail_title.configure(wraplength=min(560, available))
 
     def render_detail(self):
         paper = self.find_selected()
@@ -239,14 +255,20 @@ class PaperbaseApp:
         widget.configure(state="normal")
         widget.delete("1.0", "end")
         widget.insert("1.0", value)
+        logical_lines = value.splitlines() or [""]
+        estimated_lines = sum(max(1, (len(line) // 62) + 1) for line in logical_lines)
+        widget.configure(height=min(32, max(4, estimated_lines)))
         widget.configure(state="disabled")
 
     def find_selected(self) -> Paper | None:
         return next((paper for paper in self.papers if paper.id == self.selected_id), None)
 
     def select_paper(self, paper_id: int):
+        if paper_id == self.selected_id:
+            return
         self.selected_id = paper_id
-        self.render_list()
+        for card_id, card in self.card_widgets.items():
+            card.set_selected(card_id == paper_id)
         self.render_detail()
 
     def update_sidebar(self):
@@ -276,8 +298,7 @@ class PaperbaseApp:
             return
         result = edit_paper(self.root, paper, self.papers)
         if result:
-            index = self.papers.index(paper)
-            self.papers[index] = result
+            self.papers = [result if item.id == paper.id else item for item in self.papers]
             self.selected_id = result.id
             self.persist()
             self.render()
@@ -286,8 +307,9 @@ class PaperbaseApp:
         paper = self.find_selected()
         if not paper or not messagebox.askyesno("删除论文", f"确定删除《{paper.title}》吗？", parent=self.root):
             return
-        self.papers.remove(paper)
-        self.selected_id = self.papers[0].id if self.papers else None
+        self.papers = [item for item in self.papers if item.id != paper.id]
+        remaining = self.filtered_papers()
+        self.selected_id = remaining[0].id if remaining else (self.papers[0].id if self.papers else None)
         self.persist()
         self.render()
 

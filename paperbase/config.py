@@ -34,3 +34,9 @@ COLORS = {
 STATUS_TEXT = {"reading": "正在阅读", "read": "已读", "later": "稍后阅读"}
 STATUS_ICON = {"all": "▦", "reading": "●", "read": "✓", "later": "◷"}
 STATUS_COLOR = {"reading": COLORS["green_text"], "read": COLORS["muted"], "later": "#b3834c"}
+
+FIELD_STYLES = {
+    "summary": {"bg": "#edf7ef", "border": "#c9e2cf", "heading": "#3e7956", "text": "#567363"},
+    "innovations": {"bg": "#fff1e8", "border": "#efd3c0", "heading": "#b96946", "text": "#80604e"},
+    "notes": {"bg": "#fff8e7", "border": "#efdfb6", "heading": "#9a7a3f", "text": "#766348"},
+}
