@@ -2,3 +2,4 @@
 __pycache__/
 *.pyc
 paperbase_data.json
+paperbase_window_state.json

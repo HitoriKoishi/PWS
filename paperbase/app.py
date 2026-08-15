@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tkinter as tk
+from collections import Counter
 from tkinter import messagebox, ttk
 
 from .config import COLORS, DATA_FILE, FIELD_STYLES, FONT, MONO, STATUS_COLOR, STATUS_ICON, STATUS_TEXT
@@ -29,6 +30,7 @@ class PaperbaseApp:
         self.card_widgets = {}
         self.status_buttons: dict[str, tk.Button] = {}
         self.tag_buttons: dict[str, tk.Button] = {}
+        self.visible_tag_keys: tuple[str, ...] | None = None
         self._build()
         self.render()
 
@@ -62,13 +64,10 @@ class PaperbaseApp:
 
         tk.Frame(sidebar, height=1, bg="#2b514b").pack(fill="x", padx=24, pady=(32, 26))
         tk.Label(sidebar, text="标签", bg=COLORS["sidebar"], fg=COLORS["sidebar_muted"], font=(MONO, 9), anchor="w").pack(fill="x", padx=24, pady=(0, 9))
-        for tag, color in [("LLM", COLORS["orange"]), ("Agent", COLORS["purple"]), ("RAG", COLORS["blue"]), ("Evaluation", "#74bd91")]:
-            row = tk.Frame(sidebar, bg=COLORS["sidebar"])
-            row.pack(fill="x", padx=24, pady=2)
-            tk.Label(row, text="●", fg=color, bg=COLORS["sidebar"], font=(FONT, 9)).pack(side="left", padx=(0, 9))
-            button = tk.Button(row, text=tag, anchor="w", relief="flat", bd=0, bg=COLORS["sidebar"], fg=COLORS["sidebar_text"], activebackground=COLORS["sidebar"], activeforeground="white", font=(FONT, 10), cursor="hand2", command=lambda value=tag: self.set_tag_filter(value))
-            button.pack(side="left", fill="x", expand=True)
-            self.tag_buttons[tag] = button
+        self.tag_list_frame = tk.Frame(sidebar, bg=COLORS["sidebar"])
+        self.tag_list_frame.pack(fill="x", padx=24)
+        self.tag_more_button = tk.Button(sidebar, text="查看全部标签", anchor="w", relief="flat", bd=0, bg=COLORS["sidebar"], fg=COLORS["green_text"], activebackground=COLORS["sidebar"], activeforeground="white", font=(FONT, 9), cursor="hand2", command=self.show_all_tags)
+        self.tag_more_button.pack(fill="x", padx=24, pady=(7, 0))
 
         footer = tk.Frame(sidebar, bg=COLORS["sidebar"])
         footer.pack(side="bottom", fill="x", padx=20, pady=20)
@@ -203,9 +202,17 @@ class PaperbaseApp:
         return sorted(papers, key=lambda paper: paper.id, reverse=self.sort_newest)
 
     def render(self):
+        self.normalize_tag_filter()
         self.render_list()
         self.render_detail()
         self.update_sidebar()
+
+    def normalize_tag_filter(self):
+        available = {tag.casefold() for paper in self.papers for tag in paper.tags}
+        if self.tag_filter and self.tag_filter.casefold() not in available:
+            self.tag_filter = None
+            self.status_filter = "all"
+            self.view_title.configure(text="全部论文")
 
     def render_list(self, preserve_scroll=False):
         self.filtered = self.filtered_papers()
@@ -246,7 +253,7 @@ class PaperbaseApp:
         self._set_text(self.summary_text, paper.summary or "还没有添加概要。")
         self._set_text(self.innovation_text, "\n".join(f"•  {item}" for item in paper.innovations) or "还没有添加创新点。")
         self._set_text(self.notes_text, paper.notes or "还没有添加笔记。")
-        self.date_label.configure(text=f"最后编辑于 {paper.date}  ·  {paper.updated}")
+        self.date_label.configure(text=f"最后编辑于 {paper.date}")
         progress = 100 if paper.status == "read" else 57 if paper.status == "reading" else 0
         self.progress_bar.configure(value=progress)
         self.progress_text.configure(text="✓  已完成阅读" if progress == 100 else "↗  正在形成初步理解" if progress else "◷  加入阅读队列")
@@ -277,9 +284,63 @@ class PaperbaseApp:
             count = len(self.papers) if key == "all" else sum(paper.status == key for paper in self.papers)
             active = key == self.status_filter and not self.tag_filter
             button.configure(text=f"{STATUS_ICON[key]}  {labels[key]}  ·  {count}", bg=COLORS["sidebar_hover"] if active else COLORS["sidebar"], fg="white" if active else COLORS["sidebar_text"])
+        tag_counts = Counter(tag for paper in self.papers for tag in paper.tags)
+        tags = sorted(tag_counts, key=lambda tag: (-tag_counts[tag], tag.casefold()))
+        visible_tags = tags[:8]
+        if self.tag_filter and self.tag_filter not in visible_tags and self.tag_filter in tag_counts:
+            visible_tags = (visible_tags[:7] if len(visible_tags) >= 8 else visible_tags) + [self.tag_filter]
+        visible_keys = tuple(visible_tags)
+        if visible_keys != self.visible_tag_keys:
+            for child in self.tag_list_frame.winfo_children():
+                child.destroy()
+            self.tag_buttons = {}
+            if not visible_tags:
+                tk.Label(self.tag_list_frame, text="暂无标签", bg=COLORS["sidebar"], fg=COLORS["sidebar_muted"], font=(FONT, 9), anchor="w").pack(fill="x", pady=3)
+            for index, tag in enumerate(visible_tags):
+                row = tk.Frame(self.tag_list_frame, bg=COLORS["sidebar"])
+                row.pack(fill="x", pady=2)
+                tk.Label(row, text="●", fg=self.tag_color(tag, index), bg=COLORS["sidebar"], font=(FONT, 9)).pack(side="left", padx=(0, 9))
+                button = tk.Button(row, text="", anchor="w", relief="flat", bd=0, bg=COLORS["sidebar"], activebackground=COLORS["sidebar"], activeforeground="white", font=(FONT, 9), cursor="hand2", command=lambda value=tag: self.set_tag_filter(value))
+                button.pack(side="left", fill="x", expand=True)
+                self.tag_buttons[tag] = button
+            self.visible_tag_keys = visible_keys
         for tag, button in self.tag_buttons.items():
-            button.configure(fg="white" if tag == self.tag_filter else COLORS["sidebar_text"])
+            button.configure(text=f"{tag}  ·  {tag_counts[tag]}", fg="white" if tag == self.tag_filter else COLORS["sidebar_text"])
+        if len(tags) > len(visible_tags):
+            self.tag_more_button.configure(text=f"查看全部标签  ·  {len(tags)}")
+            self.tag_more_button.pack(fill="x", padx=24, pady=(7, 0))
+        else:
+            self.tag_more_button.pack_forget()
         self.count_label.configure(text=str(len(self.papers)))
+
+    def tag_color(self, tag, index=0):
+        palette = [COLORS["orange"], COLORS["purple"], COLORS["blue"], "#74bd91", "#d680a0", "#9b9b63"]
+        return palette[(sum(ord(char) for char in tag) + index) % len(palette)]
+
+    def tag_counts(self):
+        return Counter(tag for paper in self.papers for tag in paper.tags)
+
+    def show_all_tags(self):
+        tags = sorted(self.tag_counts(), key=lambda tag: (-self.tag_counts()[tag], tag.casefold()))
+        window = tk.Toplevel(self.root)
+        window.title("全部标签")
+        window.geometry("360x520")
+        window.minsize(300, 360)
+        window.configure(bg=COLORS["paper"])
+        window.transient(self.root)
+        tk.Label(window, text="全部标签", bg=COLORS["paper"], fg=COLORS["ink"], font=(FONT, 17, "bold"), anchor="w").pack(fill="x", padx=22, pady=(22, 3))
+        tk.Label(window, text="按使用次数排序，选择标签查看对应论文", bg=COLORS["paper"], fg=COLORS["muted"], font=(FONT, 9), anchor="w").pack(fill="x", padx=22, pady=(0, 14))
+        tag_scroll = ScrollableFrame(window, bg=COLORS["paper"])
+        tag_scroll.pack(fill="both", expand=True, padx=18, pady=(0, 20))
+        counts = self.tag_counts()
+        for index, tag in enumerate(tags):
+            choose = lambda value=tag: self.choose_tag_from_popup(window, value)
+            flat_button(tag_scroll.body, f"●  {tag}    ·    {counts[tag]} 篇论文", choose, bg=COLORS["white"], fg=COLORS["ink"], active_bg="#eef5ef", padx=12, pady=10, font=(FONT, 10)).pack(fill="x", pady=3)
+        tag_scroll.bind_scroll_tree(tag_scroll.body)
+
+    def choose_tag_from_popup(self, window, tag):
+        window.destroy()
+        self.set_tag_filter(tag)
 
     def persist(self):
         self.repository.save(self.papers)

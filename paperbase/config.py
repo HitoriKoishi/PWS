@@ -3,6 +3,7 @@ from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent.parent
 DATA_FILE = APP_DIR / "paperbase_data.json"
+WINDOW_STATE_FILE = APP_DIR / "paperbase_window_state.json"
 FONT = "Microsoft YaHei UI"
 MONO = "Consolas"
 
