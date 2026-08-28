@@ -1,12 +1,12 @@
 # Paperbase 项目手册
 
-最后更新：2026-08-05
+最后更新：2026-08-28
 
-最近界面调整：移除新建论文按钮旁边的 `⌘ K` 装饰性提示，避免展示未实现的快捷键。
+最近变更：从 Tkinter 迁移到 PySide6（Qt）。输入法（IME）预编辑拼音由 Qt 原生内联处理，不再出现 Tkinter 组合窗口白色浮层问题；输入框字体统一为 Segoe UI。
 
 ## 1. 项目定位
 
-Paperbase 是一个 Windows 本地论文整理工具。当前桌面版本使用 Python Tkinter，启动入口是 `paperbase.py`，数据保存在项目目录的 `paperbase_data.json`。
+Paperbase 是一个 Windows 本地论文整理工具。当前桌面版本使用 Python + PySide6（Qt），启动入口是 `paperbase.py`，数据保存在项目目录的 `paperbase_data.json`。
 
 桌面版本不依赖浏览器，也不需要本地 HTTP 服务。`index.html`、`styles.css` 和 `app.js` 是早期网页原型文件，目前不是桌面程序的启动路径。
 
@@ -20,14 +20,14 @@ paperbase/                Python 应用包
   config.py               路径、字体、颜色和界面常量
   models.py               Paper 数据模型和示例数据
   storage.py              JSON 数据读取、保存和 ID 管理
-  theme.py                ttk 主题和通用按钮工厂
+  theme.py                Qt 样式表（QSS）和通用按钮工厂
   widgets.py              可滚动容器和论文卡片
   dialogs.py              新建 / 编辑论文窗口
   window_state.py         编辑窗口尺寸和位置持久化
 paperbase_data.json       运行时生成的本地论文数据
 pyproject.toml            uv 项目配置
 uv.lock                   uv 锁定文件
-launch-paperbase.bat      Windows 双击启动脚本
+start.bat                 Windows 双击启动脚本
 README.md                 快速上手说明
 PROJECT_MANUAL.md         本手册
 .gitignore                本地缓存和用户数据忽略规则
@@ -37,7 +37,7 @@ PROJECT_MANUAL.md         本手册
 
 ### `paperbase.py`
 
-只负责调用 `paperbase.app.run()`。不要把数据逻辑、Tkinter 布局或业务操作重新写回这个文件。
+只负责调用 `paperbase.app.run()`。不要把数据逻辑、Qt 布局或业务操作重新写回这个文件。
 
 ### `paperbase/app.py`
 
@@ -54,11 +54,13 @@ PROJECT_MANUAL.md         本手册
 
 标签栏不保存独立的静态配置，而是从 `Paper.tags` 实时计算：默认显示使用次数最多的 8 个标签；超过 8 个时通过“查看全部标签”打开可滚动选择窗口。新增、编辑标签、删除论文或复制论文后，统一通过 `render()` 立即刷新标签计数和筛选状态。
 
-选中已经显示在侧边栏的标签时，只更新按钮文案和选中颜色，不销毁按钮控件；只有标签集合或展示顺序发生变化时才重建标签栏，以避免 Tkinter 在点击回调期间刷新当前按钮造成异常。
+选中已经显示在侧边栏的标签时，只更新按钮文案和选中颜色，不销毁按钮控件；只有标签集合或展示顺序发生变化时才重建标签栏，避免刷新期间销毁正在交互的控件。
 
 ### `paperbase/config.py`
 
 集中管理数据路径、字体、调色板、状态文案和三类内容块样式。修改颜色或字段块对比度时优先修改这里，不要在多个 UI 文件中复制颜色值。
+
+`FONT` 是界面通用字体（Microsoft YaHei UI），`INPUT_FONT` 是输入框字体（Segoe UI）。Qt 的 QLineEdit / QTextEdit 使用 `INPUT_FONT`，中文输入法预编辑拼音会以该字体内联显示。
 
 ### `paperbase/models.py`
 
@@ -79,20 +81,20 @@ PROJECT_MANUAL.md         本手册
 
 ### `paperbase/theme.py`
 
-负责 ttk 样式和通用扁平按钮。通用按钮应优先使用 `flat_button`，避免每个页面重复定义同一组 Tkinter 参数。
+负责 Qt 样式表（QSS）和通用扁平按钮。`build_qss()` 集中定义全局样式，`setup(app)` 将样式应用到 `QApplication`。通用按钮应优先使用 `flat_button`，通过 `object_name` 选择 QSS 中的按钮样式（如 `PrimaryButton`、`GhostButton`、`DangerButton`、`StatusButton`）。
 
 ### `paperbase/widgets.py`
 
 包含两个可复用控件：
 
-- `ScrollableFrame`：Canvas、内嵌 Frame 和垂直滑块组合
-- `PaperCard`：论文目录卡片和选中状态
+- `ScrollableFrame`：基于 `QScrollArea` 的垂直滚动容器，通过 `add_widget` 添加子控件
+- `PaperCard`：论文目录卡片和选中状态，点击卡片触发选择回调
 
-滚轮事件必须绑定到当前滚动容器的控件树，不能使用 `bind_all`。目录和详情页各自调用 `bind_scroll_tree`，避免一个滚轮事件同时驱动多个滑块。`ScrollableFrame` 会根据内容高度自动设置 `can_scroll`：内容不足一屏时禁用滑块并锁定到顶部。
+Qt 的 `QScrollArea` 原生支持滚轮，无需手动绑定滚轮事件。
 
 ### `paperbase/dialogs.py`
 
-负责新建和编辑论文。编辑窗口包含自己的表单滚动区和固定底部操作栏；概要、创新点和我的笔记分别使用独立的文本滚动条。滚轮事件按鼠标所在内容块分区处理，不会串到其他字段或主窗口。校验规则包括：
+负责新建和编辑论文。编辑窗口包含自己的表单滚动区和固定底部操作栏；概要、创新点和我的笔记分别使用独立的文本滚动条。校验规则包括：
 
 - 论文名称不能为空
 - 会议 / 期刊不能为空
@@ -113,11 +115,11 @@ PROJECT_MANUAL.md         本手册
 
 ### `pyproject.toml`
 
-定义 uv 项目名称、版本和 Python 版本要求。当前不依赖第三方 Python 包，Tkinter 使用 Python 自带组件。
+定义 uv 项目名称、版本、Python 版本要求和依赖。当前依赖 `pyside6`，由 uv 管理。
 
-### `launch-paperbase.bat`
+### `start.bat`
 
-检查 `uv` 是否可用，然后执行 `uv run python paperbase.py`。桌面程序需要从项目目录启动，保证数据文件路径稳定。
+执行 `uv run python paperbase.py`。桌面程序需要从项目目录启动，保证数据文件路径稳定。
 
 ### `paperbase_data.json`
 
@@ -133,7 +135,7 @@ PROJECT_MANUAL.md         本手册
 
 ### `index.html`、`styles.css`、`app.js`、`package.json`
 
-这些文件属于早期网页原型，目前不参与 Tkinter 桌面版本启动。除非明确恢复网页版本，否则不要将桌面功能修改分散到这些文件中。
+这些文件属于早期网页原型，目前不参与 PySide6 桌面版本启动。除非明确恢复网页版本，否则不要将桌面功能修改分散到这些文件中。
 
 ## 4. 数据流
 
@@ -157,14 +159,14 @@ PaperbaseApp
 uv run python -m compileall -q paperbase.py paperbase
 ```
 
-涉及窗口初始化、编辑、删除、滚轮或滚动容器时，还应运行 Tkinter 烟雾测试，至少确认：
+涉及窗口初始化、编辑、删除或滚动容器时，还应运行 Qt 烟雾测试，至少确认：
 
 1. 主窗口可以创建。
-2. 目录和详情滑块不会互相驱动。
+2. 目录和详情滚动互不干扰。
 3. 编辑窗口保存后论文内容改变。
 4. 删除后选中项和列表内容同步。
 5. 长文本可以通过滚动条完整查看。
-6. 标签筛选结果不足一屏时，目录滑块和鼠标滚轮均不会移动。
+6. 标签筛选结果不足一屏时，目录滚动条不会移动。
 
 完成代码修改后，必须同步维护：
 

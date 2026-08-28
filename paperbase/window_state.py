@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
+
+from PySide6.QtWidgets import QWidget
 
 from .config import WINDOW_STATE_FILE
 
@@ -13,18 +14,18 @@ MIN_WIDTH = 720
 MIN_HEIGHT = 700
 
 
-def _screen_limits(parent):
-    screen_width = parent.winfo_screenwidth()
-    screen_height = parent.winfo_screenheight()
-    return screen_width, screen_height, max(620, screen_width - 40), max(560, screen_height - 90)
+def _screen_limits(parent: QWidget):
+    screen = parent.screen() or parent.window().screen()
+    geometry = screen.availableGeometry()
+    return geometry.width(), geometry.height(), max(620, geometry.width() - 40), max(560, geometry.height() - 90)
 
 
-def editor_min_size(parent) -> tuple[int, int]:
+def editor_min_size(parent: QWidget) -> tuple[int, int]:
     _, _, available_width, available_height = _screen_limits(parent)
     return min(MIN_WIDTH, available_width), min(MIN_HEIGHT, available_height)
 
 
-def editor_geometry(parent) -> str:
+def editor_geometry(parent: QWidget) -> tuple[int, int, int, int]:
     screen_width, screen_height, available_width, available_height = _screen_limits(parent)
     minimum_width, minimum_height = editor_min_size(parent)
     width = min(DEFAULT_WIDTH, available_width)
@@ -37,16 +38,16 @@ def editor_geometry(parent) -> str:
         height = max(minimum_height, min(saved.get("height", height), available_height))
         x = max(10, min(saved.get("x", x), screen_width - width - 10))
         y = max(10, min(saved.get("y", y), screen_height - height - 50))
-    return f"{width}x{height}+{x}+{y}"
+    return width, height, x, y
 
 
-def save_editor_geometry(window) -> None:
-    match = re.match(r"^(\d+)x(\d+)\+(-?\d+)\+(-?\d+)$", window.geometry())
-    if not match:
-        return
-    width, height, x, y = (int(value) for value in match.groups())
+def save_editor_geometry(window: QWidget) -> None:
+    rect = window.geometry()
     temporary = Path(f"{WINDOW_STATE_FILE}.tmp")
-    temporary.write_text(json.dumps({"width": width, "height": height, "x": x, "y": y}, indent=2), encoding="utf-8")
+    temporary.write_text(
+        json.dumps({"width": rect.width(), "height": rect.height(), "x": rect.x(), "y": rect.y()}, indent=2),
+        encoding="utf-8",
+    )
     temporary.replace(WINDOW_STATE_FILE)
 
 

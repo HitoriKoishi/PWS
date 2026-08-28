@@ -1,119 +1,101 @@
 from __future__ import annotations
 
-import tkinter as tk
-from tkinter import ttk
 from typing import Callable
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from .config import COLORS, FONT, MONO, STATUS_COLOR, STATUS_ICON, STATUS_TEXT
 from .models import Paper
 
 
-class ScrollableFrame(tk.Frame):
-    def __init__(self, parent, *, bg=None):
-        super().__init__(parent, bg=bg or COLORS["canvas"])
-        self.canvas = tk.Canvas(self, bg=bg or COLORS["canvas"], highlightthickness=0, bd=0)
-        self.body = tk.Frame(self.canvas, bg=bg or COLORS["canvas"])
-        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview, style="Modern.Vertical.TScrollbar")
-        self.can_scroll = False
-        self.window_id = self.canvas.create_window((0, 0), window=self.body, anchor="nw")
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
-        self.canvas.pack(side="left", fill="both", expand=True)
-        self.scrollbar.pack(side="right", fill="y")
-        self.body.bind("<Configure>", self._on_body_configure)
-        self.canvas.bind("<Configure>", self._on_canvas_configure)
-        self.bind_scroll_tree(self.canvas)
-        self.bind_scroll_tree(self.body)
+class ScrollableFrame(QScrollArea):
+    """可滚动容器：body 为内容区，通过 add_widget 添加子控件。"""
 
-    def _on_mousewheel(self, event):
-        if not self.winfo_exists() or not self.can_scroll:
-            return
-        if event.num == 4:
-            amount = -3
-        elif event.num == 5:
-            amount = 3
-        else:
-            amount = -1 * int(event.delta / 120)
-        self.canvas.yview_scroll(amount, "units")
+    def __init__(self, parent: QWidget | None = None, *, bg: str | None = None):
+        super().__init__(parent)
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.body = QWidget(self)
+        self.body.setStyleSheet(f"background: {bg or COLORS['canvas']};")
+        self.setWidget(self.body)
+        self.layout = QVBoxLayout(self.body)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(9)
+        self.layout.addStretch(1)
 
-    def _on_body_configure(self, _event=None):
-        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-        self.after_idle(self._sync_scroll_state)
+    def add_widget(self, widget: QWidget) -> None:
+        self.layout.insertWidget(self.layout.count() - 1, widget)
 
-    def _on_canvas_configure(self, event):
-        self.canvas.itemconfigure(self.window_id, width=event.width)
-        self.after_idle(self._sync_scroll_state)
-
-    def _sync_scroll_state(self):
-        if not self.winfo_exists():
-            return
-        bbox = self.canvas.bbox("all")
-        content_height = (bbox[3] - bbox[1]) if bbox else 0
-        self.can_scroll = content_height > self.canvas.winfo_height() + 1
-        if self.can_scroll:
-            self.scrollbar.state(["!disabled"])
-        else:
-            self.scrollbar.state(["disabled"])
-            self.canvas.yview_moveto(0)
-
-    def bind_scroll_tree(self, widget):
-        """只给当前滚动容器的控件树绑定滚轮，避免多个容器同时滚动。"""
-        widget.bind("<MouseWheel>", self._on_mousewheel, add="+")
-        widget.bind("<Button-4>", self._on_mousewheel, add="+")
-        widget.bind("<Button-5>", self._on_mousewheel, add="+")
-        for child in widget.winfo_children():
-            self.bind_scroll_tree(child)
-
-    def clear(self):
-        for child in self.body.winfo_children():
-            child.destroy()
-        self.can_scroll = False
-        self.after_idle(self._sync_scroll_state)
+    def clear(self) -> None:
+        while self.layout.count() > 1:
+            item = self.layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
 
 
-class PaperCard(tk.Frame):
-    def __init__(self, parent, paper: Paper, selected: bool, on_select: Callable[[int], None]):
-        super().__init__(parent, bg=COLORS["line"], padx=1, pady=1, cursor="hand2")
+class PaperCard(QFrame):
+    def __init__(self, parent: QWidget, paper: Paper, selected: bool, on_select: Callable[[int], None]):
+        super().__init__(parent)
         self.paper = paper
         self.on_select = on_select
-        self.inner = tk.Frame(self, bg=COLORS["paper"], padx=15, pady=13)
-        self.inner.pack(fill="both", expand=True)
-        top = tk.Frame(self.inner, bg=COLORS["paper"])
-        top.pack(fill="x")
-        tk.Label(top, text=f"{STATUS_ICON.get(paper.status, '●')}  {STATUS_TEXT.get(paper.status, '未分类')}", bg=COLORS["paper"], fg=STATUS_COLOR.get(paper.status, COLORS["muted"]), font=(FONT, 9, "bold")).pack(side="left")
-        tk.Label(top, text=str(paper.year), bg=COLORS["paper"], fg=COLORS["subtle"], font=(MONO, 8)).pack(side="right")
-        title = paper.title if len(paper.title) <= 78 else paper.title[:78] + "…"
-        tk.Label(self.inner, text=title, bg=COLORS["paper"], fg=COLORS["ink"], justify="left", anchor="w", wraplength=420, font=(FONT, 10, "bold")).pack(fill="x", pady=(9, 4))
-        summary = f"{paper.venue}  ·  {paper.summary}" if paper.summary else paper.venue
-        tk.Label(self.inner, text=summary, bg=COLORS["paper"], fg=COLORS["muted"], justify="left", anchor="w", wraplength=420, font=(FONT, 8)).pack(fill="x")
-        tags = tk.Frame(self.inner, bg=COLORS["paper"])
-        tags.pack(fill="x", pady=(10, 0))
-        self.tag_labels = []
-        for tag in paper.tags[:3]:
-            label = tk.Label(tags, text=tag, bg="#edf3ed", fg="#6d8278", font=(FONT, 8), padx=6, pady=3)
-            label.pack(side="left", padx=(0, 5))
-            self.tag_labels.append(label)
-        self.set_selected(selected)
-        self._bind_recursive(self, self._click)
+        self.setObjectName("PaperCard")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(15, 13, 15, 13)
+        layout.setSpacing(0)
 
-    def set_selected(self, selected: bool):
+        top = QHBoxLayout()
+        top.setSpacing(0)
+        status_label = QLabel(f"{STATUS_ICON.get(paper.status, '●')}  {STATUS_TEXT.get(paper.status, '未分类')}")
+        status_label.setStyleSheet(
+            f"color: {STATUS_COLOR.get(paper.status, COLORS['muted'])}; font-size: 9pt; font-weight: bold; background: transparent;"
+        )
+        year_label = QLabel(str(paper.year))
+        year_label.setStyleSheet(f"color: {COLORS['subtle']}; font-size: 8pt; font-family: '{MONO}'; background: transparent;")
+        top.addWidget(status_label)
+        top.addStretch(1)
+        top.addWidget(year_label)
+        layout.addLayout(top)
+
+        title = paper.title if len(paper.title) <= 78 else paper.title[:78] + "…"
+        title_label = QLabel(title)
+        title_label.setWordWrap(True)
+        title_label.setStyleSheet(f"color: {COLORS['ink']}; font-size: 10pt; font-weight: bold; background: transparent;")
+        layout.addWidget(title_label)
+        layout.addSpacing(4)
+
+        summary = f"{paper.venue}  ·  {paper.summary}" if paper.summary else paper.venue
+        summary_label = QLabel(summary)
+        summary_label.setWordWrap(True)
+        summary_label.setStyleSheet(f"color: {COLORS['muted']}; font-size: 8pt; background: transparent;")
+        layout.addWidget(summary_label)
+
+        if paper.tags:
+            tags_row = QHBoxLayout()
+            tags_row.setSpacing(5)
+            for tag in paper.tags[:3]:
+                tag_label = QLabel(tag)
+                tag_label.setStyleSheet(
+                    "background-color: #edf3ed; color: #6d8278; font-size: 8pt; padding: 3px 6px; border-radius: 3px;"
+                )
+                tags_row.addWidget(tag_label)
+            tags_row.addStretch(1)
+            layout.addSpacing(10)
+            layout.addLayout(tags_row)
+
+        self.set_selected(selected)
+
+    def set_selected(self, selected: bool) -> None:
         border = COLORS["green_text"] if selected else COLORS["line"]
         surface = COLORS["white"] if selected else COLORS["paper"]
-        self.configure(bg=border)
-        self._set_surface_color(self.inner, surface)
+        self.setStyleSheet(
+            f"QFrame#PaperCard {{ background-color: {surface}; border: 1px solid {border}; border-radius: 4px; }}"
+        )
 
-    def _set_surface_color(self, widget, color):
-        if widget not in self.tag_labels:
-            try:
-                widget.configure(bg=color)
-            except tk.TclError:
-                pass
-        for child in widget.winfo_children():
-            self._set_surface_color(child, color)
-
-    def _bind_recursive(self, widget, callback):
-        widget.bind("<Button-1>", callback)
-        for child in widget.winfo_children():
-            self._bind_recursive(child, callback)
-
-    def _click(self, _event):
-        self.on_select(self.paper.id)
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.on_select(self.paper.id)
+        super().mousePressEvent(event)
