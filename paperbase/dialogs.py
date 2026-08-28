@@ -143,10 +143,13 @@ class PaperEditor(QDialog):
         label_widget.setStyleSheet(f"color: {style['heading']}; font-size: 9pt; font-weight: bold; background: transparent;")
         section_layout.addWidget(label_widget)
         text = QTextEdit(value)
+        text.setFrameShape(QFrame.Shape.NoFrame)
         text.setStyleSheet(
-            f"QTextEdit {{ background-color: {COLORS['white']}; border: none; color: {style['text']}; "
-            f"font-family: '{INPUT_FONT}'; font-size: 10pt; selection-background-color: {style['border']}; "
-            f"selection-color: {style['heading']}; }}"
+            f"QTextEdit {{ background-color: {style['border']}; border: none; color: {style['text']}; "
+            f"font-family: '{INPUT_FONT}'; font-size: 10pt; selection-background-color: {style['heading']}; "
+            f"selection-color: #ffffff; background-clip: border; }} "
+            f"QTextEdit {{ background-clip: border; }} "
+            f"QTextEdit > QWidget {{ background-color: {style['border']}; border: none; }}"
         )
         text.setMinimumHeight(height * 22)
         section_layout.addWidget(text)

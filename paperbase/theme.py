@@ -150,13 +150,17 @@ def build_qss() -> str:
     }}
     QLineEdit#SearchBox {{
         background-color: {c["white"]};
-        border: none;
+        border: 1px solid {c["line"]};
+        border-radius: 4px;
         padding: 8px 8px;
         font-family: "{INPUT_FONT}";
         font-size: 9pt;
         color: {c["ink"]};
         selection-background-color: {c["green_light"]};
         selection-color: {c["ink"]};
+    }}
+    QLineEdit#SearchBox:focus {{
+        border-color: {c["green_text"]};
     }}
     QLabel#CollectionHeading {{
         color: {c["subtle"]};
@@ -219,14 +223,16 @@ def build_qss() -> str:
     }}
     QProgressBar {{
         background-color: #dce9df;
-        border: none;
+        border: 1px solid #dce9df;
         border-radius: 4px;
-        min-height: 8px;
-        max-height: 8px;
+        min-height: 10px;
+        max-height: 10px;
+        padding: 1px;
+        text-align: center;
     }}
     QProgressBar::chunk {{
         background-color: #78b78a;
-        border-radius: 4px;
+        border-radius: 3px;
     }}
     QScrollArea {{
         border: none;
@@ -309,5 +315,9 @@ def flat_button(
     if checkable:
         button.setCheckable(True)
         button.setChecked(checked)
-    button.clicked.connect(command)
+
+    def _on_clicked(*_args):
+        command()
+
+    button.clicked.connect(_on_clicked)
     return button

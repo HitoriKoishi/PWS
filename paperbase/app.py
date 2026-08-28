@@ -4,6 +4,7 @@ import sys
 from collections import Counter
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -181,6 +182,16 @@ class PaperbaseApp(QMainWindow):
         body_layout.addWidget(detail, 1)
         layout.addWidget(body, 1)
 
+    def _search_icon(self):
+        pixmap = QPixmap(18, 18)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setPen(QColor(COLORS["subtle"]))
+        painter.setFont(QFont(FONT, 13))
+        painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "⌕")
+        painter.end()
+        return QIcon(pixmap)
+
     def _build_library(self):
         panel = QWidget()
         panel.setObjectName("AppRoot")
@@ -215,21 +226,11 @@ class PaperbaseApp(QMainWindow):
         toolbar_layout = QHBoxLayout(toolbar)
         toolbar_layout.setContentsMargins(0, 0, 0, 0)
         toolbar_layout.setSpacing(8)
-        search_wrap = QWidget()
-        search_wrap.setStyleSheet(
-            f"background: {COLORS['white']}; border: 1px solid {COLORS['line']}; border-radius: 4px;"
-        )
-        search_wrap_layout = QHBoxLayout(search_wrap)
-        search_wrap_layout.setContentsMargins(9, 0, 8, 0)
-        search_wrap_layout.setSpacing(3)
-        search_icon = QLabel("⌕")
-        search_icon.setStyleSheet(f"color: {COLORS['subtle']}; font-size: 19pt; background: transparent;")
         self.search_entry = QLineEdit()
         self.search_entry.setObjectName("SearchBox")
+        self.search_entry.addAction(self._search_icon(), QLineEdit.ActionPosition.LeadingPosition)
         self.search_entry.textChanged.connect(lambda *_: self.render_list())
-        search_wrap_layout.addWidget(search_icon)
-        search_wrap_layout.addWidget(self.search_entry, 1)
-        toolbar_layout.addWidget(search_wrap, 1)
+        toolbar_layout.addWidget(self.search_entry, 1)
         sort_button = flat_button(None, "最近更新  ↕", self.toggle_sort, object_name="GhostButton")
         toolbar_layout.addWidget(sort_button)
         layout.addWidget(toolbar)
@@ -311,7 +312,7 @@ class PaperbaseApp(QMainWindow):
         self.progress_bar.setFixedWidth(180)
         insight_layout.addWidget(self.progress_text)
         insight_layout.addStretch(1)
-        insight_layout.addWidget(self.progress_bar)
+        insight_layout.addWidget(self.progress_bar, 0, Qt.AlignmentFlag.AlignVCenter)
         content_layout.addWidget(insight)
         content_layout.addSpacing(28)
 
@@ -349,8 +350,12 @@ class PaperbaseApp(QMainWindow):
     def _readonly_text(self, bg, fg):
         text = QTextEdit()
         text.setReadOnly(True)
+        text.setFrameShape(QFrame.Shape.NoFrame)
         text.setStyleSheet(
-            f"QTextEdit {{ background-color: {bg}; border: none; color: {fg}; font-family: '{FONT}'; font-size: 10pt; }}"
+            f"QTextEdit {{ background-color: {bg}; border: none; color: {fg}; font-family: '{FONT}'; font-size: 10pt; "
+            f"selection-background-color: {bg}; selection-color: {fg}; }} "
+            f"QTextEdit {{ background-clip: border; }} "
+            f"QTextEdit > QWidget {{ background-color: {bg}; border: none; }}"
         )
         text.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         text.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
