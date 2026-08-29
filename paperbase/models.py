@@ -18,6 +18,7 @@ class Paper:
     notes: str = ""
     updated: str = "刚刚更新"
     date: str = field(default_factory=lambda: date.today().isoformat())
+    pdf_path: str = ""
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Paper":
@@ -33,13 +34,16 @@ class Paper:
             notes=str(data.get("notes", "")),
             updated=str(data.get("updated", "刚刚更新")),
             date=str(data.get("date", date.today().isoformat())),
+            pdf_path=str(data.get("pdf_path", "")),
         )
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     def search_text(self) -> str:
-        return " ".join([self.title, self.venue, self.summary, self.notes, *self.tags]).lower()
+        import os
+        pdf_name = os.path.basename(self.pdf_path) if self.pdf_path else ""
+        return " ".join([self.title, self.venue, self.summary, self.notes, *self.tags, pdf_name]).lower()
 
 
 def sample_papers() -> list[Paper]:

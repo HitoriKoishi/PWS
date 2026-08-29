@@ -5,6 +5,7 @@ from datetime import date
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QDialog,
     QFrame,
     QHBoxLayout,
@@ -105,6 +106,7 @@ class PaperEditor(QDialog):
         form_layout.addLayout(meta)
 
         self._entry(form_layout, "tags", "标签（用逗号分隔）", ", ".join(self.paper.tags) if self.paper else "")
+        self._pdf_picker(form_layout, self.paper.pdf_path if self.paper else "")
         self._text(form_layout, "summary", "≡  概要", self.paper.summary if self.paper else "", 4)
         self._text(form_layout, "innovations", "✳  创新点（每行一个）", "\n".join(self.paper.innovations) if self.paper else "", 4)
         self._text(form_layout, "notes", "▤  我的笔记", self.paper.notes if self.paper else "", 4)
@@ -129,6 +131,27 @@ class PaperEditor(QDialog):
         layout.addWidget(entry)
         layout.addSpacing(10)
         self.fields[key] = entry
+
+    def _pdf_picker(self, layout, value: str) -> None:
+        label_widget = QLabel("PDF 文件")
+        label_widget.setStyleSheet("color: #53655c; font-size: 9pt; font-weight: bold; background: transparent;")
+        layout.addWidget(label_widget)
+        layout.addSpacing(5)
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        self.pdf_path_edit = QLineEdit(value)
+        self.pdf_path_edit.setObjectName("FormEntry")
+        self.pdf_path_edit.setPlaceholderText("选择本地 PDF 文件（可选）")
+        row.addWidget(self.pdf_path_edit, 1)
+        browse = flat_button(None, "浏览…", self._browse_pdf, object_name="GhostButton")
+        row.addWidget(browse)
+        layout.addLayout(row)
+        layout.addSpacing(10)
+
+    def _browse_pdf(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "选择 PDF 文件", "", "PDF 文件 (*.pdf)")
+        if path:
+            self.pdf_path_edit.setText(path)
 
     def _text(self, layout, key: str, label: str, value: str, height: int) -> None:
         style = FIELD_STYLES[key]
@@ -185,6 +208,7 @@ class PaperEditor(QDialog):
             notes,
             "刚刚更新",
             date.today().isoformat(),
+            self.pdf_path_edit.text().strip(),
         )
         self.accept()
 

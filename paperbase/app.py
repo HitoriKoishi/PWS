@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import os
 import sys
 from collections import Counter
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QColor, QDesktopServices, QFont, QIcon, QPainter, QPixmap
+from PySide6.QtPdf import QPdfDocument
+from PySide6.QtPdfWidgets import QPdfView
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -290,17 +293,7 @@ class PaperbaseApp(QMainWindow):
         layout.addWidget(self.tag_line)
         layout.addSpacing(16)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        content = QWidget()
-        content.setStyleSheet(f"background: {COLORS['paper']};")
-        content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(0)
-        scroll.setWidget(content)
-        layout.addWidget(scroll, 1)
-
+        # --- reading progress insight (above PDF preview) ---
         insight = QFrame()
         insight.setObjectName("InsightBox")
         insight_layout = QHBoxLayout(insight)
@@ -313,8 +306,54 @@ class PaperbaseApp(QMainWindow):
         insight_layout.addWidget(self.progress_text)
         insight_layout.addStretch(1)
         insight_layout.addWidget(self.progress_bar, 0, Qt.AlignmentFlag.AlignVCenter)
-        content_layout.addWidget(insight)
-        content_layout.addSpacing(28)
+        layout.addWidget(insight)
+        layout.addSpacing(16)
+
+        # --- PDF preview panel ---
+        pdf_header = QWidget()
+        pdf_header_layout = QHBoxLayout(pdf_header)
+        pdf_header_layout.setContentsMargins(0, 0, 0, 0)
+        pdf_header_layout.setSpacing(8)
+        pdf_title = QLabel("📄  PDF 预览")
+        pdf_title.setStyleSheet(
+            f"color: {COLORS['ink']}; font-size: 10pt; font-weight: bold; background: transparent;"
+        )
+        self.pdf_status = QLabel("")
+        self.pdf_status.setStyleSheet(
+            f"color: {COLORS['muted']}; font-size: 9pt; background: transparent;"
+        )
+        self.pdf_open_button = flat_button(None, "在外部打开 ↗", self._open_pdf_external, object_name="GhostButton")
+        self.pdf_open_button.setVisible(False)
+        pdf_header_layout.addWidget(pdf_title)
+        pdf_header_layout.addWidget(self.pdf_status)
+        pdf_header_layout.addStretch(1)
+        pdf_header_layout.addWidget(self.pdf_open_button)
+        layout.addWidget(pdf_header)
+        layout.addSpacing(8)
+
+        self.pdf_view = QPdfView()
+        self.pdf_view.setPageMode(QPdfView.PageMode.MultiPage)
+        self.pdf_view.setZoomMode(QPdfView.ZoomMode.FitToWidth)
+        self.pdf_view.setStyleSheet(
+            f"QPdfView {{ background-color: {COLORS['paper']}; border: 1px solid {COLORS['line']}; border-radius: 4px; }}"
+        )
+        self.pdf_view.setMinimumHeight(200)
+        self.pdf_view.setMaximumHeight(400)
+        self.pdf_doc = QPdfDocument(self)
+        self.pdf_view.setDocument(self.pdf_doc)  # bind once, never setDocument(None)
+        layout.addWidget(self.pdf_view, 0)
+        layout.addSpacing(20)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget()
+        content.setStyleSheet(f"background: {COLORS['paper']};")
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
+        scroll.setWidget(content)
+        layout.addWidget(scroll, 1)
 
         self.summary_text = self._section(content_layout, "summary", "≡  概要")
         self.innovation_text = self._section(content_layout, "innovations", "✳  创新点")
@@ -425,6 +464,7 @@ class PaperbaseApp(QMainWindow):
             self._set_text(self.summary_text, "还没有选择论文。")
             self._set_text(self.innovation_text, "")
             self._set_text(self.notes_text, "")
+            self._load_pdf("")
             return
         self.status_pill.setText(STATUS_TEXT.get(paper.status, "未分类"))
         self.detail_title.setText(paper.title)
@@ -433,10 +473,44 @@ class PaperbaseApp(QMainWindow):
         self._set_text(self.summary_text, paper.summary or "还没有添加概要。")
         self._set_text(self.innovation_text, "\n".join(f"•  {item}" for item in paper.innovations) or "还没有添加创新点。")
         self._set_text(self.notes_text, paper.notes or "还没有添加笔记。")
+        self._load_pdf(paper.pdf_path)
         self.date_label.setText(f"最后编辑于 {paper.date}")
         progress = 100 if paper.status == "read" else 57 if paper.status == "reading" else 0
         self.progress_bar.setValue(progress)
         self.progress_text.setText("✓  已完成阅读" if progress == 100 else "↗  正在形成初步理解" if progress else "◷  加入阅读队列")
+
+    def _load_pdf(self, path: str) -> None:
+        """加载或清除 PDF。
+
+        Qt 的 QPdfView 在 setDocument(None) 时，内部 QPdfLinkModel 会尝试
+        连接一个空文档指针，触发 invalid nullptr parameter 警告。
+        因此视图只绑定一次持久 QPdfDocument，之后只对文档做 load/close，
+        从不调用 setDocument(None)。
+        """
+        path = path.strip()
+        if not path:
+            self.pdf_doc.close()
+            self.pdf_status.setText("未关联 PDF")
+            self.pdf_open_button.setVisible(False)
+            return
+        if not os.path.isfile(path):
+            self.pdf_doc.close()
+            self.pdf_status.setText(f"文件不存在：{os.path.basename(path)}")
+            self.pdf_open_button.setVisible(False)
+            return
+        error = self.pdf_doc.load(path)
+        if error != QPdfDocument.Error.None_:
+            self.pdf_status.setText(f"无法打开：{os.path.basename(path)}")
+            self.pdf_open_button.setVisible(True)
+            return
+        page_count = self.pdf_doc.pageCount()
+        self.pdf_status.setText(f"{os.path.basename(path)}  ·  {page_count} 页")
+        self.pdf_open_button.setVisible(True)
+
+    def _open_pdf_external(self) -> None:
+        paper = self.find_selected()
+        if paper and paper.pdf_path and os.path.isfile(paper.pdf_path):
+            QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(paper.pdf_path)))
 
     def _set_text(self, widget, value):
         widget.setPlainText(value)
